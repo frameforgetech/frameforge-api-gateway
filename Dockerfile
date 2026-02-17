@@ -30,6 +30,7 @@ WORKDIR /app
 # Copy built shared contracts
 COPY --from=builder /build/frameforge-shared-contracts/package*.json ./frameforge-shared-contracts/
 COPY --from=builder /build/frameforge-shared-contracts/dist ./frameforge-shared-contracts/dist/
+COPY --from=builder /build/frameforge-shared-contracts/node_modules ./frameforge-shared-contracts/node_modules/
 
 # Set up api-gateway directory
 WORKDIR /app/frameforge-api-gateway
