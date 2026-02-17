@@ -3,10 +3,22 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy shared contracts first
+COPY frameforge-shared-contracts/package*.json ./shared-contracts/
+COPY frameforge-shared-contracts/tsconfig.json ./shared-contracts/
+COPY frameforge-shared-contracts/src ./shared-contracts/src/
+
+# Build shared contracts
+WORKDIR /app/shared-contracts
+RUN npm ci && npm run build
+
+# Copy api-gateway files
+WORKDIR /app/api-gateway
+COPY frameforge-api-gateway/package*.json ./
 RUN npm ci
 
-COPY . .
+COPY frameforge-api-gateway/src ./src/
+COPY frameforge-api-gateway/tsconfig.json ./
 RUN npm run build
 
 # Production stage
@@ -14,13 +26,18 @@ FROM node:20-alpine
 
 RUN apk add --no-cache tini
 
-WORKDIR /app
+# Set up shared contracts directory
+WORKDIR /app/shared-contracts
+COPY --from=builder /app/shared-contracts/package*.json ./
+COPY --from=builder /app/shared-contracts/dist ./dist/
 
-COPY package*.json ./
+# Set up api-gateway directory
+WORKDIR /app/api-gateway
+COPY frameforge-api-gateway/package*.json ./
 RUN npm ci --only=production && \
     npm cache clean --force
 
-COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/api-gateway/dist ./dist
 
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
