@@ -19,7 +19,7 @@ export async function initializeRedis(): Promise<void> {
     redisClient = createClient({ 
       url: REDIS_URL,
       socket: {
-        reconnectStrategy: (retries) => {
+        reconnectStrategy: (retries: number) => {
           // In test environment, don't retry
           if (process.env.NODE_ENV === 'test') {
             return false;
@@ -33,7 +33,7 @@ export async function initializeRedis(): Promise<void> {
       },
     });
     
-    redisClient.on('error', (err) => {
+    redisClient.on('error', (err: Error) => {
       // Only log in non-test environments to avoid test pollution
       if (process.env.NODE_ENV !== 'test') {
         console.error('Redis Client Error:', err);
