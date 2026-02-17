@@ -9,13 +9,13 @@ COPY frameforge-shared-contracts/tsconfig.json ./frameforge-shared-contracts/
 COPY frameforge-shared-contracts/src ./frameforge-shared-contracts/src/
 
 WORKDIR /build/frameforge-shared-contracts
-RUN npm ci && npm run build
+RUN npm install && npm run build
 
 # Copy api-gateway files
 WORKDIR /build/frameforge-api-gateway
 COPY frameforge-api-gateway/package*.json ./
 COPY frameforge-api-gateway/tsconfig.json ./
-RUN npm ci
+RUN npm install
 
 COPY frameforge-api-gateway/src ./src/
 RUN npm run build
@@ -34,7 +34,7 @@ COPY --from=builder /build/frameforge-shared-contracts/dist ./frameforge-shared-
 # Set up api-gateway directory
 WORKDIR /app/frameforge-api-gateway
 COPY frameforge-api-gateway/package*.json ./
-RUN npm ci --only=production && \
+RUN npm install --only=production && \
     npm cache clean --force
 
 COPY --from=builder /build/frameforge-api-gateway/dist ./dist
