@@ -1,24 +1,23 @@
 # Build stage
 FROM node:20-alpine AS builder
 
-WORKDIR /app
+WORKDIR /build
 
-# Copy shared contracts first
-COPY frameforge-shared-contracts/package*.json ./shared-contracts/
-COPY frameforge-shared-contracts/tsconfig.json ./shared-contracts/
-COPY frameforge-shared-contracts/src ./shared-contracts/src/
+# Copy and build shared contracts first
+COPY frameforge-shared-contracts/package*.json ./frameforge-shared-contracts/
+COPY frameforge-shared-contracts/tsconfig.json ./frameforge-shared-contracts/
+COPY frameforge-shared-contracts/src ./frameforge-shared-contracts/src/
 
-# Build shared contracts
-WORKDIR /app/shared-contracts
+WORKDIR /build/frameforge-shared-contracts
 RUN npm ci && npm run build
 
 # Copy api-gateway files
-WORKDIR /app/api-gateway
+WORKDIR /build/frameforge-api-gateway
 COPY frameforge-api-gateway/package*.json ./
+COPY frameforge-api-gateway/tsconfig.json ./
 RUN npm ci
 
 COPY frameforge-api-gateway/src ./src/
-COPY frameforge-api-gateway/tsconfig.json ./
 RUN npm run build
 
 # Production stage
@@ -26,18 +25,19 @@ FROM node:20-alpine
 
 RUN apk add --no-cache tini
 
-# Set up shared contracts directory
-WORKDIR /app/shared-contracts
-COPY --from=builder /app/shared-contracts/package*.json ./
-COPY --from=builder /app/shared-contracts/dist ./dist/
+WORKDIR /app
+
+# Copy built shared contracts
+COPY --from=builder /build/frameforge-shared-contracts/package*.json ./frameforge-shared-contracts/
+COPY --from=builder /build/frameforge-shared-contracts/dist ./frameforge-shared-contracts/dist/
 
 # Set up api-gateway directory
-WORKDIR /app/api-gateway
+WORKDIR /app/frameforge-api-gateway
 COPY frameforge-api-gateway/package*.json ./
 RUN npm ci --only=production && \
     npm cache clean --force
 
-COPY --from=builder /app/api-gateway/dist ./dist
+COPY --from=builder /build/frameforge-api-gateway/dist ./dist
 
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
