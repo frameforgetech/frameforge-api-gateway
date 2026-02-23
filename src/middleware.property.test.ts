@@ -103,6 +103,8 @@ describe('Rate Limiting Property Tests', () => {
           // Abort if Redis was closed (e.g. afterAll ran mid-iteration)
           const client = getRedisClient();
           if (!client || !client.isOpen) return;
+          // Flush between runs to avoid counter accumulation across fast-check iterations
+          await client.flushDb();
 
           const RATE_LIMIT_MAX = 100;
           let rejectedCount = 0;
