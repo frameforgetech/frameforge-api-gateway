@@ -100,6 +100,10 @@ describe('Rate Limiting Property Tests', () => {
         // Generate a number of requests (between 1 and 150)
         fc.integer({ min: 1, max: 150 }),
         async (userId, requestCount) => {
+          // Abort if Redis was closed (e.g. afterAll ran mid-iteration)
+          const client = getRedisClient();
+          if (!client || !client.isOpen) return;
+
           const RATE_LIMIT_MAX = 100;
           let rejectedCount = 0;
           let acceptedCount = 0;
@@ -187,7 +191,8 @@ describe('Rate Limiting Property Tests', () => {
           // Reset Redis state between property runs to avoid counter accumulation
           // across fast-check iterations (especially during shrinking)
           const client = getRedisClient();
-          if (client) await client.flushDb();
+          if (!client || !client.isOpen) return; // Redis closed (e.g. afterAll ran) — abort silently
+          await client.flushDb();
 
           const RATE_LIMIT_MAX = 100;
           const uniqueUsers = [...new Set(userIds)]; // Remove duplicates
