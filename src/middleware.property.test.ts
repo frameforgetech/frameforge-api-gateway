@@ -184,6 +184,11 @@ describe('Rate Limiting Property Tests', () => {
         // Each user makes 50-120 requests
         fc.integer({ min: 50, max: 120 }),
         async (userIds, requestsPerUser) => {
+          // Reset Redis state between property runs to avoid counter accumulation
+          // across fast-check iterations (especially during shrinking)
+          const client = getRedisClient();
+          if (client) await client.flushDb();
+
           const RATE_LIMIT_MAX = 100;
           const uniqueUsers = [...new Set(userIds)]; // Remove duplicates
 
