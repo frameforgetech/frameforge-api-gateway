@@ -4,20 +4,33 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
 import { authMiddleware, getRedisClient } from '../middleware';
 import { AppDataSource } from '../database';
-import { VideoJob, JobStatus } from '@frameforge/shared-contracts';
+import { VideoJob, JobStatus } from '@frameforgetech/shared-contracts';
 import { publishToQueue } from '../queue';
 import { invalidateJobCache } from '../cache';
 
 const router = Router();
 
 // Initialize S3 client
-const s3Client = new S3Client({
+const s3ClientConfig: any = {
   region: process.env.AWS_REGION || 'us-east-1',
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
+};
+
+// Only set explicit credentials if provided (for local/MinIO)
+if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+  s3ClientConfig.credentials = {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  };
+}
+// Otherwise, SDK will automatically use IAM role from EC2 instance
+
+// Add endpoint only if specified (for MinIO compatibility)
+if (process.env.AWS_ENDPOINT) {
+  s3ClientConfig.endpoint = process.env.AWS_ENDPOINT;
+  s3ClientConfig.forcePathStyle = true;
+}
+
+const s3Client = new S3Client(s3ClientConfig);
 
 // Supported video formats
 const SUPPORTED_FORMATS = ['video/mp4', 'video/avi', 'video/quicktime', 'video/x-matroska', 'video/webm'];
@@ -94,6 +107,59 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
+/**
+ * @swagger
+ * /api/v1/videos/upload-url:
+ *   post:
+ *     summary: Generate pre-signed URL for video upload
+ *     tags: [Videos]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - filename
+ *               - contentType
+ *               - fileSize
+ *             properties:
+ *               filename:
+ *                 type: string
+ *                 example: my-video.mp4
+ *               contentType:
+ *                 type: string
+ *                 example: video/mp4
+ *               fileSize:
+ *                 type: integer
+ *                 example: 10485760
+ *                 description: File size in bytes
+ *     responses:
+ *       200:
+ *         description: Pre-signed URL generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 uploadUrl:
+ *                   type: string
+ *                   format: uri
+ *                 videoId:
+ *                   type: string
+ *                   format: uuid
+ *                 expiresIn:
+ *                   type: integer
+ *                   description: Expiration time in seconds
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 // POST /api/v1/videos/upload-url
 router.post('/upload-url', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
@@ -210,6 +276,106 @@ router.post('/upload-url', authMiddleware, async (req: Request, res: Response): 
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/videos/jobs:
+ *   post:
+ *     summary: Create a video processing job
+ *     tags: [Videos]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - videoId
+ *               - filename
+ *             properties:
+ *               videoId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Video ID received from upload-url endpoint
+ *               filename:
+ *                 type: string
+ *                 example: my-video.mp4
+ *     responses:
+ *       201:
+ *         description: Job created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 jobId:
+ *                   type: string
+ *                   format: uuid
+ *                 status:
+ *                   type: string
+ *                   enum: [pending]
+ *                 createdAt:
+ *                   type: string
+ *                   format: date-time
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ *   get:
+ *     summary: List all video processing jobs
+ *     tags: [Videos]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, processing, completed, failed]
+ *     responses:
+ *       200:
+ *         description: List of jobs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 jobs:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Job'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 // POST /api/v1/videos/jobs
 router.post('/jobs', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
@@ -401,6 +567,36 @@ router.get('/jobs', authMiddleware, async (req: Request, res: Response): Promise
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/videos/jobs/{id}:
+ *   get:
+ *     summary: Get job details by ID
+ *     tags: [Videos]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Job ID
+ *     responses:
+ *       200:
+ *         description: Job details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Job'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
 // GET /api/v1/videos/jobs/:id - Get job details
 router.get('/jobs/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
