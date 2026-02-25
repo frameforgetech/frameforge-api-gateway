@@ -279,7 +279,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Update kubeconfig for EKS
-        uses: aws-actions/eks-update-kubeconfig@v2
+        uses: aws-actions/amazon-eks-update-kubeconfig@v3
         with:
           cluster-name: frameforge-dev
           region: ${{ secrets.AWS_REGION }}
