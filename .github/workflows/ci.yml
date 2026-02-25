@@ -278,11 +278,17 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Update kubeconfig for EKS
-        uses: aws-actions/amazon-eks-update-kubeconfig@v3
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
         with:
-          cluster-name: frameforge-dev
-          region: ${{ secrets.AWS_REGION }}
+          version: 'latest'
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws --version
+          aws eks update-kubeconfig \
+            --region "${{ secrets.AWS_REGION }}" \
+            --name "frameforge-dev"
 
       - name: Deploy to Kubernetes
         run: |
